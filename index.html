@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="nl">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zwermgedrag met pijltjes</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+      background: #0b4f6c;
+    }
+
+    .controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 12px;
+      border-radius: 10px;
+      width: 260px;
+    }
+
+    .row {
+      margin-bottom: 10px;
+    }
+
+    .tooltip {
+      cursor: help;
+    }
+
+    .label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      margin-bottom: 2px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="controls">
+    <div class="row">
+      <div class="label tooltip" title="Dit bepaalt hoe erg de agent richting het midden van de groep wilt bewegen">
+        <span>Samenhang</span><span id="samenhangVal"></span>
+      </div>
+      <input id="samenhang" type="range" min="0" max="3" step="0.01" value="1.0">
+    </div>
+
+    <div class="row">
+      <div class="label tooltip" title="Dit bepaalt hoe erg de agent afstand wilt houden van andere agenten">
+        <span>Scheiding</span><span id="scheidingVal"></span>
+      </div>
+      <input id="scheiding" type="range" min="0" max="3" step="0.01" value="1.5">
+    </div>
+
+    <div class="row">
+      <div class="label tooltip" title="Dit bepaalt hoe erg de agent de snelheid en richting van zijn buren volgt">
+        <span>Afstemming</span><span id="afstemmingVal"></span>
+      </div>
+      <input id="afstemming" type="range" min="0" max="3" step="0.01" value="1.0">
+    </div>
+
+    <div class="row">
+      <div class="label tooltip" title="Dit bepaalt hoe sterk de agent naar het eten toe trekt">
+        <span>Eten</span><span id="etenVal"></span>
+      </div>
+      <input id="eten" type="range" min="0" max="5" step="0.01" value="0">
+    </div>
+
+    <div class="row">
+      <div class="label tooltip" title="Dit bepaalt hoe sterk de agent van gevaar wegvlucht">
+        <span>Gevaar</span><span id="gevaarVal"></span>
+      </div>
+      <input id="gevaar" type="range" min="0" max="5" step="0.01" value="3">
+    </div>
+
+    <div class="row">
+      <div class="label"><span>Aantal</span><span id="aantalVal"></span></div>
+      <input id="aantal" type="range" min="1" max="300" step="1" value="150">
+    </div>
+  </div>
+
+  <script>
+    let zwerm = [];
+    let canvas;
+    let foodPoint;
+    let dangerPoint;
+
+    const sliders = {
+      samenhang: document.getElementById('samenhang'),
+      scheiding: document.getElementById('scheiding'),
+      afstemming: document.getElementById('afstemming'),
+      eten: document.getElementById('eten'),
+      gevaar: document.getElementById('gevaar'),
+      aantal: document.getElementById('aantal')
+    };
+
+    const labels = {
+      samenhangVal: document.getElementById('samenhangVal'),
+      scheidingVal: document.getElementById('scheidingVal'),
+      afstemmingVal: document.getElementById('afstemmingVal'),
+      etenVal: document.getElementById('etenVal'),
+      gevaarVal: document.getElementById('gevaarVal'),
+      aantalVal: document.getElementById('aantalVal')
+    };
+
+    function setup() {
+      canvas = createCanvas(windowWidth, windowHeight);
+      canvas.position(0, 0);
+      canvas.style('z-index', '1');
+      canvas.style('display', 'block');
+      foodPoint = createVector(width * 0.75, height * 0.25);
+      dangerPoint = createVector(width * 0.30, height * 0.55);
+      createInitialSwarm();
+      syncLabels();
+    }
+
+    function draw() {
+      background(0, 120, 200);
+
+      const Samenhang = parseFloat(sliders.samenhang.value);
+      const Scheiding = parseFloat(sliders.scheiding.value);
+      const Afstemming = parseFloat(sliders.afstemming.value);
+      const Eten = parseFloat(sliders.eten.value);
+      const Gevaar = parseFloat(sliders.gevaar.value);
+      const aantal = parseInt(sliders.aantal.value, 10);
+
+      syncLabels();
+
+      if (zwerm.length < aantal) {
+        for (let i = zwerm.length; i < aantal; i++) {
+          zwerm.push(new Dier(width / 2, height / 2));
+        }
+      } else if (zwerm.length > aantal) {
+        zwerm.length = aantal;
+      }
+
+      let centerZwerm = createVector(0, 0);
+      for (let d of zwerm) {
+        centerZwerm.add(d.positie);
+      }
+
+      if (zwerm.length > 0) {
+        centerZwerm.div(zwerm.length);
+        let chase = p5.Vector.sub(centerZwerm, dangerPoint);
+        if (chase.mag() > 0) {
+          chase.normalize();
+          chase.mult(1.5);
+          dangerPoint.add(chase);
+        }
+      }
+
+      drawPoint(foodPoint, color(0, 220, 100), 14);
+      drawPoint(dangerPoint, color(255, 80, 80), 18);
+
+      for (let d of zwerm) {
+        d.voerUit(zwerm, Samenhang, Scheiding, Afstemming, Eten, Gevaar);
+      }
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+    }
+
+    function mousePressed() {
+      if (mouseButton === LEFT) {
+        foodPoint.set(mouseX, mouseY);
+      } else if (mouseButton === RIGHT) {
+        dangerPoint.set(mouseX, mouseY);
+        return false;
+      } else {
+        zwerm.push(new Dier(mouseX, mouseY));
+      }
+    }
+
+    function syncLabels() {
+      labels.samenhangVal.textContent = floatToText(sliders.samenhang.value);
+      labels.scheidingVal.textContent = floatToText(sliders.scheiding.value);
+      labels.afstemmingVal.textContent = floatToText(sliders.afstemming.value);
+      labels.etenVal.textContent = floatToText(sliders.eten.value);
+      labels.gevaarVal.textContent = floatToText(sliders.gevaar.value);
+      labels.aantalVal.textContent = sliders.aantal.value;
+    }
+
+    function floatToText(v) {
+      return Number(v).toFixed(2);
+    }
+
+    function createInitialSwarm() {
+      zwerm = [];
+      const n = parseInt(sliders.aantal.value, 10);
+      for (let i = 0; i < n; i++) {
+        zwerm.push(new Dier(width / 2 + random(-20, 20), height / 2 + random(-20, 20)));
+      }
+    }
+
+    function drawPoint(v, c, size) {
+      noStroke();
+      fill(c);
+      ellipse(v.x, v.y, size, size);
+    }
+
+    class Dier {
+      constructor(x, y) {
+        this.versnelling = createVector(0, 0);
+        const hoek = random(TWO_PI);
+        this.snelheid = createVector(cos(hoek), sin(hoek));
+        this.positie = createVector(x, y);
+        this.straal = 2.0;
+        this.maximaleSnelheid = 2;
+        this.maximaleKracht = 0.03;
+      }
+
+      voerUit(dieren, Samenhang, Scheiding, Afstemming, Eten, Gevaar) {
+        this.zwerm(dieren, Samenhang, Scheiding, Afstemming, Eten, Gevaar);
+        this.update();
+        this.randen();
+        this.teken();
+      }
+
+      pasKrachtToe(kracht) {
+        this.versnelling.add(kracht);
+      }
+
+      zwerm(dieren, Samenhang, Scheiding, Afstemming, Eten, Gevaar) {
+        let scheiding = this.scheid(dieren);
+        let afstemming = this.stemAf(dieren);
+        let samenhang = this.zoekMiddelpunt(dieren);
+        let eten = this.zoekEten(foodPoint);
+        let gevaar = this.ontwijk(dangerPoint);
+
+        scheiding.mult(Scheiding);
+        afstemming.mult(Afstemming);
+        samenhang.mult(Samenhang);
+        eten.mult(Eten);
+        gevaar.mult(Gevaar);
+
+        this.pasKrachtToe(scheiding);
+        this.pasKrachtToe(afstemming);
+        this.pasKrachtToe(samenhang);
+        this.pasKrachtToe(eten);
+        this.pasKrachtToe(gevaar);
+      }
+
+      update() {
+        this.snelheid.add(this.versnelling);
+        this.snelheid.limit(this.maximaleSnelheid);
+        this.positie.add(this.snelheid);
+        this.versnelling.mult(0);
+      }
+
+      beweegNaar(doel) {
+        let gewenst = p5.Vector.sub(doel, this.positie);
+        gewenst.normalize();
+        gewenst.mult(this.maximaleSnelheid);
+        let stuurkracht = p5.Vector.sub(gewenst, this.snelheid);
+        stuurkracht.limit(this.maximaleKracht);
+        return stuurkracht;
+      }
+
+      teken() {
+        const hoek = this.snelheid.heading();
+
+        push();
+        translate(this.positie.x, this.positie.y);
+        rotate(hoek);
+
+        fill(255, 220, 0);
+        stroke(255);
+        strokeWeight(1);
+
+        beginShape();
+        vertex(10, 0);
+        vertex(-6, -5);
+        vertex(-2, 0);
+        vertex(-6, 5);
+        endShape(CLOSE);
+
+        noStroke();
+        fill(0);
+        ellipse(4, -1, 2.2, 2.2);
+
+        pop();
+      }
+
+      randen() {
+        if (this.positie.x < -this.straal) this.positie.x = width + this.straal;
+        if (this.positie.y < -this.straal) this.positie.y = height + this.straal;
+        if (this.positie.x > width + this.straal) this.positie.x = -this.straal;
+        if (this.positie.y > height + this.straal) this.positie.y = -this.straal;
+      }
+
+      scheid(dieren) {
+        const gewensteAfstand = 25.0;
+        let stuurkracht = createVector(0, 0);
+        let teller = 0;
+
+        for (let andere of dieren) {
+          const afstand = p5.Vector.dist(this.positie, andere.positie);
+          if (afstand > 0 && afstand < gewensteAfstand) {
+            let verschil = p5.Vector.sub(this.positie, andere.positie);
+            verschil.normalize();
+            verschil.div(afstand);
+            stuurkracht.add(verschil);
+            teller++;
+          }
+        }
+
+        if (teller > 0) stuurkracht.div(teller);
+
+        if (stuurkracht.mag() > 0) {
+          stuurkracht.normalize();
+          stuurkracht.mult(this.maximaleSnelheid);
+          stuurkracht.sub(this.snelheid);
+          stuurkracht.limit(this.maximaleKracht);
+        }
+
+        return stuurkracht;
+      }
+
+      stemAf(dieren) {
+        const buurAfstand = 50;
+        let som = createVector(0, 0);
+        let teller = 0;
+
+        for (let andere of dieren) {
+          const afstand = p5.Vector.dist(this.positie, andere.positie);
+          if (afstand > 0 && afstand < buurAfstand) {
+            som.add(andere.snelheid);
+            teller++;
+          }
+        }
+
+        if (teller > 0) {
+          som.div(teller);
+          som.normalize();
+          som.mult(this.maximaleSnelheid);
+          let stuurkracht = p5.Vector.sub(som, this.snelheid);
+          stuurkracht.limit(this.maximaleKracht);
+          return stuurkracht;
+        }
+
+        return createVector(0, 0);
+      }
+
+      zoekMiddelpunt(dieren) {
+        const buurAfstand = 50;
+        let som = createVector(0, 0);
+        let teller = 0;
+
+        for (let andere of dieren) {
+          const afstand = p5.Vector.dist(this.positie, andere.positie);
+          if (afstand > 0 && afstand < buurAfstand) {
+            som.add(andere.positie);
+            teller++;
+          }
+        }
+
+        if (teller > 0) {
+          som.div(teller);
+          return this.beweegNaar(som);
+        }
+
+        return createVector(0, 0);
+      }
+
+      zoekEten(target) {
+        return this.beweegNaar(target);
+      }
+
+      ontwijk(target) {
+        let desired = p5.Vector.sub(this.positie, target);
+        let d = desired.mag();
+        let panicDist = 120;
+        if (d > panicDist) return createVector(0, 0);
+
+        desired.normalize();
+        desired.mult(this.maximaleSnelheid);
+        let steer = p5.Vector.sub(desired, this.snelheid);
+        steer.limit(this.maximaleKracht);
+        return steer;
+      }
+    }
+  </script>
+</body>
+
+</html>
